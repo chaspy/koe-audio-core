@@ -1,70 +1,106 @@
 # koe-audio-core
 
-koe（音声入力アプリ）の「声の大きさ・無音の判定」ライブラリ。C++20 で実装し、外向きは C の API（`include/koe_audio.h`）。
-`macos/Sources/Koe/AudioQuality.swift`（koe-dev）の移植で、後で Swift から呼ぶ。private repo。
+A C++20 library for loudness and silence assessment in [Koe](https://github.com/chaspy/koe).
+It exposes a C API in `include/koe_audio.h`, allowing Swift to call the same audio analysis
+implementation. Integration with Go through cgo is planned.
 
-## 判定
+## Build and test
 
-- 30 ms の窓ごとの RMS を出し、下位 10% を背景（`noise_db`）とする
-- 背景より 10 dB 以上大きく、かつ −56 dBFS 以上の窓を声とみなす。`level_db` は声の窓の平均、`speech_s` は声の長さ
-- `koe_too_quiet`: `level_db < −45` かつ `speech_s >= 0.3`
-- 窓が 4 つ以下の短い入力、声の窓がない入力は `valid = 0`
-- Swift と同じ結果になる（`macos/Tests/quality/main.swift` の全ケースを `tests/test_quality.cpp` に移植。別に、決まった合成波形で Swift 版と全指標が一致することも確認した）
-
-## ビルドとテスト
+Requirements: CMake 3.20 or newer, a C++20 compiler, and `kagami` on `PATH`.
 
 ```sh
-cmake -S . -B build/default && cmake --build build/default -j 2
-ctest --test-dir build/default -j 2
-bin/ci    # configure → build → ctest → ASan/UBSan 版の ctest → kagami check
+bin/ci
 ```
 
-ASan/UBSan だけ: `cmake -S . -B build/asan -DKOE_SANITIZE=ON`。テストは合成の正弦波と雑音だけを使う（録音は使わない）。
+This configures and builds the library, runs CTest, repeats the tests with AddressSanitizer
+and UndefinedBehaviorSanitizer, and runs `kagami check --format agent-brief`.
+Builds and tests use at most two parallel jobs.
 
-### ファジング
-
-`fuzz/fuzz_measure.cpp` が libFuzzer のターゲット（任意のバイト列・サンプルレートで落ちないこと）。
-Apple clang には libFuzzer が付いていないため、Homebrew の llvm（`/opt/homebrew/opt/llvm/bin/clang++`）で configure したときだけ `fuzz_measure` を作る:
+To build and run the tests separately:
 
 ```sh
-cmake -S . -B build/fuzz -DCMAKE_CXX_COMPILER=/opt/homebrew/opt/llvm/bin/clang++ && cmake --build build/fuzz --target fuzz_measure
-build/fuzz/fuzz_measure -max_total_time=60
+cmake -S . -B build/default
+cmake --build build/default -j 2
+ctest --test-dir build/default -j 2 --output-on-failure
 ```
 
-この環境には llvm が無いので libFuzzer は動かしていない。代わりに同じターゲットへ疑似乱数の入力 300 本を流す `fuzz_smoke`（ctest に含む）が通常ビルドと ASan/UBSan ビルドで走る。
+The static library is `build/default/libkoe_audio.a`. Link it with the C++ runtime when
+calling it from another language. Swift integration can expose the header through a
+bridging header or module map; a Swift package wrapper is not provided here.
 
-## C API
+## C API example
+
+The following complete C example uses a synthetic waveform: silence followed by a tone.
 
 ```c
 #include "koe_audio.h"
+#include <stdio.h>
 
-int16_t pcm[...];  // 16 kHz モノラル。呼び出し側が持つ
-koe_quality q;
-if (koe_measure_i16(pcm, n, 16000, &q) == KOE_OK && q.valid) {
-  printf("%.1f dB, %.2f s\n", q.level_db, q.speech_s);
-  if (koe_too_quiet(&q)) { /* 入力音量の案内を出す */ }
+int main(void) {
+  int16_t pcm[16000] = {0};
+  for (size_t i = 4800; i < 16000; ++i) {
+    pcm[i] = (i % 40 < 20) ? 2000 : -2000;
+  }
+
+  koe_quality q = {0};
+  int status = koe_measure_i16(pcm, 16000, 16000, &q);
+  if (status != KOE_OK) return 1;
+  if (q.valid) {
+    printf("%.1f dBFS, %.2f s\n", q.level_db, q.speech_s);
+    if (koe_too_quiet(&q)) puts("Input volume is too low.");
+  } else {
+    puts("Too little input or no voiced windows detected.");
+  }
+  return 0;
 }
 ```
 
-メモリの所有権は常に呼び出し側。ライブラリは `pcm` を呼び出し中に読むだけで、確保したメモリを返さない。
-`float` 版（`koe_measure_f32`、±1.0 が満点。NaN は 0、範囲外は ±1 に丸める）もある。C++ の例外は境界で止めて `KOE_ERR_INTERNAL` にする。
+Save this as `example.c` and, after building, compile and link it:
 
-## Windows 版（Go）との差
+```sh
+cc -std=c11 -Iinclude -c example.c -o example.o
+c++ example.o build/default/libkoe_audio.a -o example
+./example
+```
 
-`windows/core/lowlevel.go` の `RecordingLevel` は、無音を切り落とした後の PCM 全体の RMS を出して −45 dBFS 未満かだけを返す。
-背景推定・声の窓の選別・`speech_s`・0.3 秒条件はない（ミュート判定は別の `Peak`）。このライブラリは macOS 版に合わせた。Go からの利用は後回し。
+Input is mono PCM at 8,000–192,000 Hz. The caller owns all buffers; the library only reads
+samples during the call and retains no pointers. `koe_measure_f32` accepts floating-point
+samples with full scale ±1.0, replaces NaN with zero, and clamps out-of-range samples.
+A null sample pointer is allowed only for zero-length input. The output pointer must be
+non-null. Invalid arguments return `KOE_ERR_INVALID_ARG`; exceptions are caught at the
+C boundary and return `KOE_ERR_INTERNAL`. `KOE_OK` can still mean `q.valid == 0`.
 
-## C++ で書いて気づいたこと
+## Measurements
 
-- メモリ管理: `std::vector` と `std::span` だけで書けて、`new`/`delete` も生ポインタの所有も出てこない。C の境界（`koe_audio.cpp`）だけが生ポインタで、長さと NULL を最初に検査する。ASan ビルドで境界外アクセスは出なかった
-- 未定義動作: 入力が `float` だと NaN が混ざり得る。NaN を `std::sort` に渡すと比較が strict weak ordering を壊して未定義動作になるので、取り込み時に 0 へ寄せた。`int16_t` の `abs(-32768)` も `int` に広げないと UB になる（Swift は `Int` に変換していた）。符号付き整数の暗黙変換は `-Wconversion` で拾った
-- Swift との比較: Swift は配列の範囲外アクセスが必ずトラップし、整数オーバーフローも検出される。C++ は `operator[]` が検査なしなので、入力長の検査を自分で書き、その穴を sanitizer と fuzz で確かめる。Rust なら `unsafe` を書かない限り同じ穴は型で塞がる
-- C++ の例外は C の境界を越えてはいけない。`catch (...)` で止めてエラーコードに変える必要がある（Swift / Rust では境界の外に出る失敗がそもそも型に現れる）
-- kagami: 診断で出たのは「テストが無い」の 1 件のみで、メモリや UB の発見は sanitizer・コンパイラ警告側だった
+- RMS is measured in complete 30 ms windows. The lower 10th percentile estimates the
+  background level (`noise_db`).
+- Windows above approximately 10 dB over the background and −56 dBFS are treated as voiced.
+  `level_db` is the mean voiced-window RMS in dBFS; `speech_s` is their total duration.
+- `koe_too_quiet` reports a valid voice level below −45 dBFS lasting at least 0.3 seconds.
+- Input of at most four window lengths, or input without voiced windows, yields `valid = 0`.
+- Additional fields report signal-to-noise ratio, clipping ratio, and brightness.
 
-## 次（この PR の範囲外）
+These are level-based heuristics, not speech recognition.
 
-- Swift からの呼び出し（モジュールマップ / SwiftPM）
-- VAD・無音カット
-- iOS
-- Go（Windows 版）からの利用
+## Test data and fuzzing
+
+This repository must not contain real recordings, audio files, or internal information.
+Tests use synthetic waveforms only, including generated tones and noise.
+
+CTest includes `quality` and `fuzz_smoke`. The smoke test feeds 300 deterministic
+pseudo-random inputs to the fuzz target and runs in both normal and sanitizer builds.
+For libFuzzer on macOS, the current build detects Homebrew LLVM at the following path:
+
+```sh
+cmake -S . -B build/fuzz -DCMAKE_CXX_COMPILER=/opt/homebrew/opt/llvm/bin/clang++
+cmake --build build/fuzz --target fuzz_measure -j 2
+build/fuzz/fuzz_measure -max_total_time=60
+```
+
+Apple Clang does not include libFuzzer; the smoke test remains available without it.
+
+## License
+
+Copyright (c) 2026 chaspy. All rights reserved. No license is granted at this time.
+See [LICENSE](LICENSE). This library is part of [Koe](https://github.com/chaspy/koe)
+and follows the same terms.

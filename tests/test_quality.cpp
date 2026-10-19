@@ -1,4 +1,4 @@
-// Port of macos/Tests/quality/main.swift (koe-dev): synthetic sine waves and noise only.
+// Quality measurement tests using synthetic sine waves and noise only.
 #include <cmath>
 #include <cstdint>
 #include <cstdio>

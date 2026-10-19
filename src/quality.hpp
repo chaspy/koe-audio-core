@@ -1,4 +1,4 @@
-// Port of macos/Sources/Koe/AudioQuality.swift (koe-dev).
+// Loudness and silence measurement for Koe (https://github.com/chaspy/koe).
 #pragma once
 
 #include <algorithm>
