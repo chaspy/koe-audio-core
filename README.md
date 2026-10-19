@@ -6,14 +6,18 @@ implementation. Integration with Go through cgo is planned.
 
 ## Build and test
 
-Requirements: CMake 3.20 or newer, a C++20 compiler, and `kagami` on `PATH`.
+Requirements: CMake 3.20 or newer and a C++20 compiler.
+
+Optional: `kagami` (the maintainer's local quality gate).
 
 ```sh
 bin/ci
 ```
 
 This configures and builds the library, runs CTest, repeats the tests with AddressSanitizer
-and UndefinedBehaviorSanitizer, and runs `kagami check --format agent-brief`.
+and UndefinedBehaviorSanitizer, and runs `kagami check --format agent-brief` when available
+on `PATH`. If kagami is absent, the optional quality gate is skipped; if present, its
+failures still cause `bin/ci` to fail.
 Builds and tests use at most two parallel jobs.
 
 To build and run the tests separately:
