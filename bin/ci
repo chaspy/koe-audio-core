@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# configure -> build -> ctest -> ASan/UBSan tests -> kagami check
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+echo "== configure + build"
+cmake -S . -B build/default >/dev/null
+cmake --build build/default -j 2
+
+echo "== ctest"
+ctest --test-dir build/default -j 2 --output-on-failure
+
+echo "== configure + build (ASan/UBSan)"
+cmake -S . -B build/asan -DKOE_SANITIZE=ON >/dev/null
+cmake --build build/asan -j 2
+
+echo "== ctest (ASan/UBSan)"
+ctest --test-dir build/asan -j 2 --output-on-failure
+
+echo "== kagami check"
+kagami check --format agent-brief
+
+echo "== ci: ok"
