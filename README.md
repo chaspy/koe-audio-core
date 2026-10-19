@@ -52,7 +52,7 @@ if (koe_measure_i16(pcm, n, 16000, &q) == KOE_OK && q.valid) {
 ## Windows 版（Go）との差
 
 `windows/core/lowlevel.go` の `RecordingLevel` は、無音を切り落とした後の PCM 全体の RMS を出して −45 dBFS 未満かだけを返す。
-背景推定・声の窓の選別・`speech_s`・0.3 秒条件はない（ミュート判定は別の `Peak`）。この ライブラリは macOS 版に合わせた。Go からの利用は後回し。
+背景推定・声の窓の選別・`speech_s`・0.3 秒条件はない（ミュート判定は別の `Peak`）。このライブラリは macOS 版に合わせた。Go からの利用は後回し。
 
 ## C++ で書いて気づいたこと
 

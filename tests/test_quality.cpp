@@ -2,6 +2,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <exception>
 #include <numbers>
 #include <random>
 #include <vector>
@@ -44,13 +45,16 @@ static koe_quality measure(const std::vector<int16_t> &pcm) {
 
 static bool near(double a, double b, double tol) { return std::fabs(a - b) < tol; }
 
-int main() {
+static void test_thresholds() {
   // -50 dBFS: level about -50, warns, speech_s is the tone length
   const koe_quality soft = measure(recording(-50, 2));
   CHECK(soft.valid && near(soft.level_db, -50, 1), "-50 dBFS is measured as about -50");
   CHECK(koe_too_quiet(&soft), "-50 dBFS warns");
   CHECK(near(soft.speech_s, 2, 0.1), "speech_s is the tone length");
 
+}
+
+static void test_normal_and_edges() {
   // -25 dBFS: no warning
   const koe_quality normal = measure(recording(-25, 2));
   CHECK(normal.valid && near(normal.level_db, -25, 1), "-25 dBFS is measured as about -25");
@@ -62,6 +66,17 @@ int main() {
   CHECK(!koe_too_quiet(&q44), "-44 dBFS does not warn");
   CHECK(koe_too_quiet(&q46), "-46 dBFS warns");
 
+}
+
+static void test_fields() {
+  const koe_quality soft = measure(recording(-50, 2));
+  // extra fields on a clean tone
+  CHECK(soft.noise_db < -70 && soft.snr_db > 10, "noise and SNR are plausible");
+  CHECK(soft.clip_ratio == 0, "no clipping");
+
+}
+
+static void test_rejects() {
   // short sound (0.2 s) does not warn even when quiet
   const koe_quality shortq = measure(recording(-50, 0.2));
   CHECK(!koe_too_quiet(&shortq), "short sound does not warn");
@@ -71,7 +86,9 @@ int main() {
 
   // below the -56 dBFS floor: not voice
   CHECK(!measure(recording(-60, 2)).valid, "-60 dBFS is below the floor");
+}
 
+static void test_values() {
   // the decision looks only at the values
   koe_quality v{};
   v.valid = 1; v.level_db = -50; v.speech_s = 1;
@@ -81,11 +98,9 @@ int main() {
   CHECK(!koe_too_quiet(nullptr), "NULL: no warning");
   const koe_quality empty{};
   CHECK(!koe_too_quiet(&empty), "empty");
+}
 
-  // extra fields on a clean tone
-  CHECK(soft.noise_db < -70 && soft.snr_db > 10, "noise and SNR are plausible");
-  CHECK(soft.clip_ratio == 0, "no clipping");
-
+static void test_api() {
   // C API argument checks
   koe_quality q;
   CHECK(koe_measure_i16(nullptr, 0, 16000, &q) == KOE_OK && !q.valid, "empty input is OK and invalid");
@@ -93,21 +108,37 @@ int main() {
   CHECK(koe_measure_i16(nullptr, 0, 16000, nullptr) == KOE_ERR_INVALID_ARG, "NULL out");
   const std::vector<int16_t> pcm = recording(-25, 1);
   CHECK(koe_measure_i16(pcm.data(), pcm.size(), 0, &q) == KOE_ERR_INVALID_ARG, "bad sample rate");
+}
 
+static void test_floats() {
   // float input agrees with int16 input; NaN/inf do not break it
   const std::vector<int16_t> rec = recording(-25, 2);
   std::vector<float> f(rec.size());
   for (std::size_t i = 0; i < rec.size(); ++i) f[i] = static_cast<float>(rec[i]) / 32768.0f;
   koe_quality qf;
   CHECK(koe_measure_f32(f.data(), f.size(), 16000, &qf) == KOE_OK, "float OK");
-  CHECK(near(qf.level_db, normal.level_db, 0.11), "float matches int16");
+  CHECK(near(qf.level_db, measure(rec).level_db, 0.11), "float matches int16");
   f[100] = std::nanf("");
   f[101] = INFINITY;
   CHECK(koe_measure_f32(f.data(), f.size(), 16000, &qf) == KOE_OK && qf.valid, "NaN/inf input is handled");
 
   // clipping is counted (a 0 dBFS sine is clamped to full scale)
   CHECK(measure(recording(0, 1)).clip_ratio > 0.1, "clipped tone has a clip_ratio");
+}
 
+int main() {
+  try {
+    test_thresholds();
+    test_normal_and_edges();
+    test_fields();
+    test_rejects();
+    test_values();
+    test_api();
+    test_floats();
+  } catch (const std::exception &e) {
+    std::printf("exception: %s\n", e.what());
+    return 1;
+  }
   if (failures > 0) {
     std::printf("%d failure(s)\n", failures);
     return 1;

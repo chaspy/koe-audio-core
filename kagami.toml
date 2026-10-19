@@ -1,0 +1,2 @@
+[clang_tidy]
+compile_commands = "build/default/compile_commands.json"
