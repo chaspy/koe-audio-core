@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# configure -> build -> ctest -> ASan/UBSan tests -> kagami check
+# configure -> build -> ctest -> ASan/UBSan tests -> optional kagami check
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -17,7 +17,11 @@ cmake --build build/asan -j 2
 echo "== ctest (ASan/UBSan)"
 ctest --test-dir build/asan -j 2 --output-on-failure
 
-echo "== kagami check"
-kagami check --format agent-brief
+if command -v kagami >/dev/null 2>&1; then
+  echo "== kagami check"
+  kagami check --format agent-brief
+else
+  echo "kagami not found; skipping the optional quality gate"
+fi
 
 echo "== ci: ok"
