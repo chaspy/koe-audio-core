@@ -32,6 +32,29 @@ The static library is `build/default/libkoe_audio.a`. Link it with the C++ runti
 calling it from another language. Swift integration can expose the header through a
 bridging header or module map; a Swift package wrapper is not provided here.
 
+## C API compatibility
+
+`KOE_AUDIO_API_VERSION` is currently `1`; `koe_audio_api_version()` returns the version
+of the linked library. Existing function signatures and structure layouts remain stable
+within an API version. Breaking changes require incrementing the version; compatible
+API additions do not. The C17 test fixes `koe_quality` at 56 bytes with field offsets
+0, 8, 16, 24, 32, 40, and 48 on the supported 64-bit macOS and Windows targets.
+
+## Windows cross-build (MinGW)
+
+With the x86_64 MinGW-w64 C/C++ compilers and binutils on `PATH`:
+
+```sh
+cmake -S . -B build/mingw -DCMAKE_TOOLCHAIN_FILE=cmake/mingw-w64.cmake
+cmake --build build/mingw --target koe_audio test_c_api -j 2
+```
+
+The static library is `build/mingw/libkoe_audio.a`. Link with the MinGW C++ runtime.
+The C17 ABI test is compiled and linked for Windows, but is not run on the build host.
+`bin/ci` also performs this cross-build and uses `x86_64-w64-mingw32-nm` to verify
+all public C function symbols are defined without name mangling. If
+`x86_64-w64-mingw32-g++` is absent, it prints `skipping`; no toolchain is installed.
+
 ## C API example
 
 The following complete C example uses a synthetic waveform: silence followed by a tone.
@@ -91,7 +114,7 @@ These are level-based heuristics, not speech recognition.
 This repository must not contain real recordings, audio files, or internal information.
 Tests use synthetic waveforms only, including generated tones and noise.
 
-CTest includes `quality` and `fuzz_smoke`. The smoke test feeds 300 deterministic
+CTest includes `quality`, `c_api` (C17 linkage and ABI layout), and `fuzz_smoke`. The smoke test feeds 300 deterministic
 pseudo-random inputs to the fuzz target and runs in both normal and sanitizer builds.
 For libFuzzer on macOS, the current build detects Homebrew LLVM at the following path:
 

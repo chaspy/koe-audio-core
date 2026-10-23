@@ -17,6 +17,24 @@ cmake --build build/asan -j 2
 echo "== ctest (ASan/UBSan)"
 ctest --test-dir build/asan -j 2 --output-on-failure
 
+if command -v x86_64-w64-mingw32-g++ >/dev/null 2>&1; then
+  echo "== Windows cross-build (MinGW)"
+  cmake -S . -B build/mingw -DCMAKE_TOOLCHAIN_FILE=cmake/mingw-w64.cmake \
+    -DKOE_BUILD_TESTS=ON -DKOE_SANITIZE=OFF >/dev/null
+  # Compile and link the C17 ABI test for Windows; do not execute it on the host.
+  cmake --build build/mingw --target koe_audio test_c_api -j 2
+  symbols=$(x86_64-w64-mingw32-nm --defined-only --extern-only build/mingw/libkoe_audio.a)
+  for symbol in koe_audio_api_version koe_measure_i16 koe_measure_f32 koe_too_quiet; do
+    if ! awk -v symbol="$symbol" '$2 == "T" && $3 == symbol { found = 1 } END { exit !found }' <<<"$symbols"; then
+      echo "Missing unmangled C symbol: $symbol" >&2
+      exit 1
+    fi
+    echo "Verified C symbol: $symbol"
+  done
+else
+  echo "MinGW not found; skipping the Windows cross-build"
+fi
+
 if command -v kagami >/dev/null 2>&1; then
   echo "== kagami check"
   kagami check --format agent-brief
