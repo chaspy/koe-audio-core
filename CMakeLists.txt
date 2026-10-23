@@ -26,6 +26,12 @@ if(KOE_BUILD_TESTS)
   target_include_directories(test_quality PRIVATE src)
   add_test(NAME quality COMMAND test_quality)
 
+  add_executable(test_c_api tests/test_c_api.c)
+  set_target_properties(test_c_api PROPERTIES
+    C_STANDARD 17 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF)
+  target_link_libraries(test_c_api PRIVATE koe_audio)
+  add_test(NAME c_api COMMAND test_c_api)
+
   # libFuzzer is not in Apple clang. Use it only when Homebrew's llvm is present;
   # otherwise build a driver that feeds the same target pseudo-random inputs.
   set(KOE_LLVM_CLANGXX /opt/homebrew/opt/llvm/bin/clang++)

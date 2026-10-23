@@ -14,6 +14,11 @@
 extern "C" {
 #endif
 
+#define KOE_AUDIO_API_VERSION 1
+
+/* Returns the API version of the linked library. */
+int koe_audio_api_version(void);
+
 #define KOE_OK 0
 #define KOE_ERR_INVALID_ARG (-1) /* NULL pointer, bad sample rate */
 #define KOE_ERR_INTERNAL (-2)    /* allocation failure etc. */
