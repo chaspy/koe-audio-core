@@ -18,6 +18,10 @@ This configures and builds the library, runs CTest, repeats the tests with Addre
 and UndefinedBehaviorSanitizer, and runs `kagami check --format agent-brief` when available
 on `PATH`. If kagami is absent, the optional quality gate is skipped; if present, its
 failures still cause `bin/ci` to fail.
+
+There is no hosted CI. `bin/ci` is the gate: run it locally and paste a summary of its output into
+the pull request description.
+
 Builds and tests use at most two parallel jobs.
 
 To build and run the tests separately:
