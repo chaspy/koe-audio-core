@@ -116,15 +116,22 @@ Tests use synthetic waveforms only, including generated tones and noise.
 
 CTest includes `quality`, `c_api` (C17 linkage and ABI layout), and `fuzz_smoke`. The smoke test feeds 300 deterministic
 pseudo-random inputs to the fuzz target and runs in both normal and sanitizer builds.
-For libFuzzer on macOS, the current build detects Homebrew LLVM at the following path:
+For libFuzzer on macOS, install Homebrew LLVM (`brew install llvm`); Apple Clang does not include
+libFuzzer. The build enables the `fuzz_measure` target only with that compiler:
 
 ```sh
-cmake -S . -B build/fuzz -DCMAKE_CXX_COMPILER=/opt/homebrew/opt/llvm/bin/clang++
+cmake -S . -B build/fuzz -DCMAKE_CXX_COMPILER=/opt/homebrew/opt/llvm/bin/clang++ \
+  -DCMAKE_C_COMPILER=/opt/homebrew/opt/llvm/bin/clang
 cmake --build build/fuzz --target fuzz_measure -j 2
-build/fuzz/fuzz_measure -max_total_time=60
+mkdir -p build/fuzz/corpus
+build/fuzz/fuzz_measure -max_total_time=600 -rss_limit_mb=2048 -max_len=65536 \
+  build/fuzz/corpus fuzz/corpus
 ```
 
-Apple Clang does not include libFuzzer; the smoke test remains available without it.
+`fuzz/corpus/` holds a few small synthetic seeds (generated tones, silence, clipping, NaN/Inf
+floats). The first input byte selects the sample rate, the second selects int16 or float32, and
+the rest is PCM. `bin/ci` runs libFuzzer for 30 seconds when Homebrew LLVM is present and
+skips it otherwise; the smoke test remains available without it.
 
 ## License
 
